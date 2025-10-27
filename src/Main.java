@@ -18,13 +18,18 @@ public class Main {
         Map<String, Borrower> borrowers = new LinkedHashMap<>();
         int nextAuthorId = 1;
 
+        // gets the ISBN, title, and author names from booksFile
         try (BufferedReader br = Files.newBufferedReader(Paths.get(booksFile))) {
             br.readLine(); // skip header (has unneeded tokens)
             String line;
             while ((line = br.readLine()) != null) {
-                if (line.isBlank()) continue;
+                if (line.isBlank()) {
+                    continue;
+                }
                 String[] c = line.split("\t", -1);
-                if (c.length < 4) continue;
+                if (c.length < 4) { 
+                    continue;
+                }
 
                 String isbn = c[0].trim().toUpperCase();
                 String title = c[2].trim();
@@ -33,22 +38,31 @@ public class Main {
                 String[] names = c[3].split(",");
                 for (String name : names) {
                     name = name.trim();
-                    if (name.isEmpty()) continue;
+                    if (name.isEmpty()) {
+                        continue;
+                    }
                     Integer id = authors.get(name);
-                    if (id == null) authors.put(name, id = nextAuthorId++);
+                    if (id == null) {
+                        authors.put(name, id = nextAuthorId++);
+                    }
                     bookAuthors.add(isbn + "#" + id);
                 }
             }
             //System.out.println("bookAuthors: " + bookAuthors); // for testing
         }
 
+        // gets ID, SSN, name, address, and phone from borrowersFile
         try (BufferedReader br = Files.newBufferedReader(Paths.get(borrowersFile))) {
             br.readLine(); // skip header (has unneeded tokens)
             String line;
             while ((line = br.readLine()) != null) {
-                if (line.isBlank()) continue;
+                if (line.isBlank()) {
+                    continue;
+                }
                 String[] c = line.split(",", -1);
-                if (c.length < 9) continue;
+                if (c.length < 9) {
+                    continue;
+                }
 
                 String id = c[0].trim();
                 String ssn = c[1].trim();
@@ -65,13 +79,6 @@ public class Main {
         writeCsv(Paths.get(outDir, "authors.csv").toString(), "Author_id,Name", authors.entrySet(), e -> e.getValue() + "," + quote(e.getKey()));
         writeCsv(Paths.get(outDir, "book_authors.csv").toString(), "Isbn,Author_id", bookAuthors, key -> { int i = key.lastIndexOf('#'); return key.substring(0, i) + "," + key.substring(i + 1);});
         writeCsv(Paths.get(outDir, "borrower.csv").toString(), "Card_id,Ssn,Bname,Address,Phone", borrowers.values(), b -> String.join(",", b.id, b.ssn, quote(b.name), quote(b.address), quote(b.phone)));
-        
-        /*
-        System.out.println("Done. Rows -> book: " + books.size()
-                + ", authors: " + authors.size()
-                + ", book_authors: " + bookAuthors.size()
-                + ", borrower: " + borrowers.size());
-        */
     }
 
     static interface ToCSV<T> {
@@ -87,14 +94,20 @@ public class Main {
     }
 
     static String quote(String s) {
-        if (s.contains(",") || s.contains("\"")) return "\"" + s.replace("\"", "\"\"") + "\"";
+        if (s.contains(",") || s.contains("\"")) {
+            return "\"" + s.replace("\"", "\"\"") + "\"";
+        }
         return s;
     }
 
     static class Borrower {
         String id, ssn, name, address, phone;
         Borrower(String id, String ssn, String name, String address, String phone) {
-            this.id = id; this.ssn = ssn; this.name = name; this.address = address; this.phone = phone;
+            this.id = id;
+            this.ssn = ssn;
+            this.name = name;
+            this.address = address;
+            this.phone = phone;
         }
     }
 }
