@@ -18,9 +18,8 @@ public class Main {
         Map<String, Borrower> borrowers = new LinkedHashMap<>();
         int nextAuthorId = 1;
 
-        // ---- Read books.csv (TAB DELIMITED) ----
         try (BufferedReader br = Files.newBufferedReader(Paths.get(booksFile))) {
-            String header = br.readLine(); // skip header
+            br.readLine(); // skip header (has unneeded tokens)
             String line;
             while ((line = br.readLine()) != null) {
                 if (line.isBlank()) continue;
@@ -41,12 +40,11 @@ public class Main {
                     bookAuthors.add(isbn + "#" + id);
                 }
             }
-            //System.out.println("bookAuthors: " + bookAuthors);
+            //System.out.println("bookAuthors: " + bookAuthors); // for testing
         }
 
-        // ---- Read borrowers.csv (COMMA DELIMITED) ----
         try (BufferedReader br = Files.newBufferedReader(Paths.get(borrowersFile))) {
-            String header = br.readLine(); // skip header
+            br.readLine(); // skip header (has unneeded tokens)
             String line;
             while ((line = br.readLine()) != null) {
                 if (line.isBlank()) continue;
@@ -56,7 +54,7 @@ public class Main {
                 String id = c[0].trim();
                 String ssn = c[1].trim();
                 String name = c[2].trim() + " " + c[3].trim();
-                //String email = c[4].trim(); // not used
+                //String email = c[4].trim(); // not used (yet)
                 String address = c[5].trim() + ", " + c[6].trim() + ", " + c[7].trim();
                 String phone = c[8].trim();
 
@@ -64,13 +62,9 @@ public class Main {
             }
         }
 
-        // ---- Write outputs ----
         writeCsv(Paths.get(outDir, "book.csv").toString(), "Isbn,Title", books.entrySet(), e -> e.getKey() + "," + quote(e.getValue()));
-
         writeCsv(Paths.get(outDir, "authors.csv").toString(), "Author_id,Name", authors.entrySet(), e -> e.getValue() + "," + quote(e.getKey()));
-
         writeCsv(Paths.get(outDir, "book_authors.csv").toString(), "Isbn,Author_id", bookAuthors, key -> { int i = key.lastIndexOf('#'); return key.substring(0, i) + "," + key.substring(i + 1);});
-
         writeCsv(Paths.get(outDir, "borrower.csv").toString(), "Card_id,Ssn,Bname,Address,Phone", borrowers.values(), b -> String.join(",", b.id, b.ssn, quote(b.name), quote(b.address), quote(b.phone)));
         
         /*
@@ -81,8 +75,9 @@ public class Main {
         */
     }
 
-    // --------- Helper methods ---------
-    interface ToCSV<T> { String row(T t); }
+    static interface ToCSV<T> {
+        String row(T t); 
+    }
 
     static <T> void writeCsv(String path, String header, Collection<T> data, ToCSV<T> fn) throws IOException {
         Path p = Paths.get(path);
