@@ -49,6 +49,10 @@ public class Main {
                 }
             }
             //System.out.println("bookAuthors: " + bookAuthors); // for testing
+            /*System.out.println("Current bookAuthors entries:");
+            for (String entry : bookAuthors) {
+                System.out.println("  " + entry);
+            }*/
         }
 
         // gets ID, SSN, name, address, and phone from borrowersFile
@@ -89,7 +93,9 @@ public class Main {
         Path p = Paths.get(path);
         try (BufferedWriter bw = Files.newBufferedWriter(p)) {
             bw.write(header + "\n");
-            for (T t : data) bw.write(fn.row(t) + "\n");
+            for (T t : data) {
+                bw.write(fn.row(t) + "\n");
+            }
         }
     }
 
