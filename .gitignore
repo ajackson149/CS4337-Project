@@ -45,7 +45,6 @@ Thumbs.db
 
 # Build directories
 /bin/
-/output/
 
 # Maven
 target/
