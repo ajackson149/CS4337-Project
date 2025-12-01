@@ -5,7 +5,7 @@ def main():
 
     # test search
     results = db.search_books("harry potter")
-    print("Search results:", results)
+    
 
     # test checkout
     
