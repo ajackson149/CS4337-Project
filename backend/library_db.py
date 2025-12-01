@@ -51,7 +51,7 @@ class LibraryDB:
                 "authors": row[2] if row[2] else "",
                 "status": row[3]
             })
-
+        """
         print(f"{'NO':<3} {'ISBN':<12} {'TITLE':<40} {'AUTHORS':<30} {'STATUS':<6}")
     
         # Separator (optional)
@@ -66,6 +66,7 @@ class LibraryDB:
 
             print(f"{no:<3} {isbn:<12} {title:<40} {authors:<30} {status:<6}")
             
+        """
         return results
 
 
