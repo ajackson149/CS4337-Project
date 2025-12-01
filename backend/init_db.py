@@ -44,6 +44,20 @@ def createTables(conn):
 
                 
                 );""")
+    cur.execute(
+            """ CREATE TABLE IF NOT EXISTS BOOK_LOANS(
+            Loan_id INTEGER PRIMARY KEY, Isbn TEXT NOT NULL, Card_id TEXT NOT NULL,
+            Date_out TEXT NOT NULL, Due_date TEXT NOT NULL, Date_in TEXT,
+            FOREIGN KEY (Isbn) REFERENCES BOOK (Isbn), FOREIGN KEY (Card_id) REFERENCES 
+            BORROWER(Card_id)
+            );"""
+                )
+    cur.execute(
+            """CREATE TABLE IF NOT EXISTS FINES(
+            Loan_id INTEGER PRIMARY KEY AUTOINCREMENT, Fine_amt INTEGER NOT NULL, Paid INTEGER NOT NULL CHECK (Paid IN (0,1)),
+            FOREIGN KEY (Loan_id) REFERENCES BOOK_LOANS(Loan_id)
+            )"""
+    )
     conn.commit()
 
 
