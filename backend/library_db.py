@@ -70,7 +70,72 @@ class LibraryDB:
 
 
     def checkout_book(self, isbn, card_id):
-        print()
+        isbn = isbn.strip().upper()
+        card_id = card_id.strip()
+
+        # make sure the borrower exists
+        self.cur.execute("""
+            SELECT * 
+            FROM BORROWER
+            WHERE Card_id = ?;
+        """, (card_id,))
+        borrower = self.cur.fetchone()
+        if borrower is None:
+            print("ERROR: Borrower does not exist")
+            return False;
+    
+        # checking if the borrower has fines due
+        self.cur.execute("""
+            SELECT SUM(Fine_amt)
+            FROM FINES F
+            JOIN BOOK_LOANS BL ON F.Loan_id = BL.Loan_id
+            WHERE BL.Card_id = ?
+                AND F.Paid = 0
+        """, (card_id,))
+        due_fines = self.cur.fetchone()[0]
+        if due_fines is not None and due_fines > 0:
+            print(f"ERROR: Borrower has fines due (${due_fines:.2f})")
+            return False
+        
+        # checking if the borrower has less than 3 active loans
+        self.cur.execute("""
+        SELECT COUNT(*)
+        FROM BOOK_LOANS
+        WHERE Card_id = ? 
+            AND Date_in IS NULL
+        """, (card_id,))
+        active_loans = self.cur.fetchone()[0]
+        if active_loans >= 3:
+            print("ERROR: Borrower has reached the maximum loans permissible")
+            return False
+        
+        # checking if the book exists
+        self.cur.execute("SELECT * FROM BOOK WHERE Isbn = ?", (isbn,))
+        book = self.cur.fetchone()
+        if book is None:
+            print("ERROR: Book does not exist.")
+            return False
+        
+        # checking the book's availability
+        self.cur.execute("""
+        SELECT * FROM BOOK_LOANS
+        WHERE Isbn = ? 
+            AND Date_in IS NULL
+        """, (isbn,))
+        loan = self.cur.fetchone()
+        if loan is not None:
+            print("ERROR: Book has been checked out.")
+            return False
+        
+        # the book is checked out and a 14 day due date is assigned
+        self.cur.execute("""
+        INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
+        VALUES (?, ?, DATE('now'), DATE('now', '+14 days'), NULL)
+        """, (isbn, card_id))
+        self.conn.commit()
+        print("Checkout successful")
+        return True
+        
     def checkin_book(self, loan_id):
         print()
     def update_fines(self):
