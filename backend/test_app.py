@@ -380,6 +380,46 @@ def test_pay_fines_behavior(db: LibraryDB):
     cur.execute("SELECT Loan_id, Fine_amt, Paid FROM FINES")
     print("   FINES rows:", cur.fetchall())
 
+def test_manual_fine_growth(db: LibraryDB):
+    """
+    Manually demonstrate fine growth as days late increase.
+    Creates a returned loan that is first 5 days late, then 6 days late,
+    and shows the fine changing (e.g., 1.25 -> 1.50).
+    """
+    print("\n[MANUAL FINE TEST] Fine growth with different late days")
+
+    reset_loans_and_fines(db)
+    (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
+    isbn = isbns[0]
+    cur = db.cur
+
+    # First: 5 days late
+    # Due: 2025-01-10, Returned: 2025-01-15  => 5 days late
+    cur.execute("""
+        INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
+        VALUES (?, ?, '2025-01-01', '2025-01-10', '2025-01-15')
+    """, (isbn, card_id))
+    loan_id = cur.lastrowid
+    db.conn.commit()
+
+    db.update_fines()
+    cur.execute("SELECT Fine_amt FROM FINES WHERE Loan_id = ?", (loan_id,))
+    fine_5 = cur.fetchone()[0]
+    print("  Fine with 5 days late (expected 1.25):", fine_5)
+
+    # Now: 6 days late
+    # Returned changed to 2025-01-16  => 6 days late
+    cur.execute("""
+        UPDATE BOOK_LOANS
+        SET Date_in = '2025-01-16'
+        WHERE Loan_id = ?
+    """, (loan_id,))
+    db.conn.commit()
+
+    db.update_fines()
+    cur.execute("SELECT Fine_amt FROM FINES WHERE Loan_id = ?", (loan_id,))
+    fine_6 = cur.fetchone()[0]
+    print("  Fine with 6 days late (expected 1.50):", fine_6)
 
 # ===========================
 # MAIN
@@ -414,6 +454,9 @@ def main():
 
     print("\n=== pay_fines tests ===")
     test_pay_fines_behavior(db)
+
+    print("\n=== manual_fine tests ===")
+    test_manual_fine_growth(db)
 
     db.conn.close()
 

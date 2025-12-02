@@ -220,40 +220,49 @@ class LibraryDB:
 
         Rules:
         - Returned late:
-            fine = (Date_in - Due_date) * 0.25
+            fine = full_days_late * 0.25
         - Still out and overdue:
-            fine = (today - Due_date) * 0.25
+            fine = full_days_late * 0.25
         - If FINES row exists for a loan:
             - If Paid == 0, update Fine_amt.
             - If Paid == 1, leave it alone.
         - If no FINES row exists, insert one with Paid = 0.
         """
+
         # 1) Late books that have been returned
         self.cur.execute("""
             SELECT
                 Loan_id,
-                ROUND((julianday(Date_in) - julianday(Due_date)) * 0.25, 2) AS Fine
+                ROUND(
+                    CAST(julianday(Date_in) - julianday(Due_date) AS INTEGER) * 0.25,
+                    2
+                ) AS Fine
             FROM BOOK_LOANS
             WHERE Date_in IS NOT NULL
-              AND julianday(Date_in) > julianday(Due_date)
+            AND julianday(Date_in) > julianday(Due_date)
         """)
         returned_rows = self.cur.fetchall()
-        self._apply_fines(returned_rows)
 
         # 2) Late books still out
         self.cur.execute("""
             SELECT
                 Loan_id,
-                ROUND((julianday('now') - julianday(Due_date)) * 0.25, 2) AS Fine
+                ROUND(
+                    CAST(julianday('now') - julianday(Due_date) AS INTEGER) * 0.25,
+                    2
+                ) AS Fine
             FROM BOOK_LOANS
             WHERE Date_in IS NULL
-              AND julianday('now') > julianday(Due_date)
+            AND julianday('now') > julianday(Due_date)
         """)
         out_rows = self.cur.fetchall()
+
+        self._apply_fines(returned_rows)
         self._apply_fines(out_rows)
 
         self.conn.commit()
         print("Fines updated.")
+
 
     def _apply_fines(self, fine_rows):
         """
