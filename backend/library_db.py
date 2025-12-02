@@ -137,7 +137,7 @@ class LibraryDB:
         print("Checkout successful")
         return True
         
-    def checkin_book(self, query):
+    def checkin_book(self, query, selections):
         search = f"%{query.lower()}%"
 
         sql = """
@@ -151,15 +151,16 @@ class LibraryDB:
             OR LOWER(BR.Bname) LIKE ?)
         ORDER BY BL.Date_out;
         """
+
         self.cur.execute(sql, (search, search, search))
         rows = self.cur.fetchall()
 
-        # if there are no results
-        # then the book was already checked in or the search failed (book does not exist or was not checked out)
-        if len(rows) < 1:
-            print("Error: The book has already been checked in or there are no results available")
+        # No matching loans
+        if len(rows) == 0:
+            print("No active loans match this search.")
             return False
 
+        # Convert rows to dictionaries
         results = []
         for row in rows:
             results.append({
@@ -172,44 +173,37 @@ class LibraryDB:
                 "due_date": row[6]
             })
 
-        # display table
-        print(f"{'NO':<3} {'Loan_id':<8} {'ISBN':<12} {'TITLE':<40} {'Card_id':<10} {'BORROWER':<20} {'OUT':<10} {'DUE':<10}")
-        for i, loan in enumerate(results, start=1):
-            print(f"{i:<3} {loan['loan_id']:<8} {loan['isbn']:<12} {loan['title'][:40]:<40} {loan['card_id']:<10} {loan['borrower_name'][:20]:<20} {loan['date_out']:<10} {loan['due_date']:<10}")
-
-        # ask user to check in up to 3 books
-        books = input("Select up to 3 Books to check in using the Loan ID: ").split()
-
-        # check in fails if the number exceeds 3 or the number of available books to be checked out
-        if len(books) > 3 or len(books) > len(results):
-            print("Error: Inappropriate selection amount")
+        # Validate selections are 1-based row numbers
+        if len(selections) == 0:
+            print("Error: No selections provided.")
             return False
 
-        # convert to integers and validate
-        try:
-            selected_ids = [int(x) for x in books]
-        except ValueError:
-            print("Error: Invalid Loan ID")
+        if len(selections) > 3:
+            print("Error: Cannot check in more than 3 books.")
             return False
 
-        # checking that the selected loan ids exist
-        valid_ids = {loan["loan_id"] for loan in results}
-        for loan_id in selected_ids:
-            if loan_id not in valid_ids:
-                print("Error: Loan ID is not in the list above.")
-                return False
+        if any(s < 1 or s > len(results) for s in selections):
+            print("Error: Selection number out of range.")
+            return False
 
-        # updating the check in date
-        for loan_id in selected_ids:
+        # Map selections (1-based index) to loan_ids
+        loan_ids = [results[s-1]["loan_id"] for s in selections]
+
+        # Check in each selected loan
+        for loan_id in loan_ids:
             self.cur.execute("""
-            UPDATE BOOK_LOANS
-            SET Date_in = DATE('now')
-            WHERE Loan_id = ?
+                UPDATE BOOK_LOANS
+                SET Date_in = DATE('now')
+                WHERE Loan_id = ?
             """, (loan_id,))
-            self.conn.commit()
+        self.conn.commit()
+
+        # Update fines after check-in
+        self.update_fines()
 
         print("Books successfully checked in.")
         return True
+
     
     def update_fines(self):
         print()
