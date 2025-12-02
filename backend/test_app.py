@@ -92,17 +92,26 @@ def test_create_borrower_success_and_duplicate(db: LibraryDB):
 
     cur = db.cur
 
-    # Get an SSN that already exists
-    cur.execute("SELECT Ssn FROM BORROWER LIMIT 1;")
-    row = cur.fetchone()
-    existing_ssn = row[0]
+    # Get all existing SSNs so we can generate a unique one
+    cur.execute("SELECT Ssn FROM BORROWER;")
+    existing_ssns = {row[0] for row in cur.fetchall()}
 
-    # First: create a new borrower with a new SSN
-    new_ssn = "999-99-0001"
+    # Generate a new SSN that is guaranteed not to exist yet
+    base_ssn_num = 999990000
+    new_ssn = None
+    while True:
+        candidate = f"{base_ssn_num:09d}"        # e.g. "999990000"
+        formatted = f"{candidate[0:3]}-{candidate[3:5]}-{candidate[5:9]}"  # "999-99-0000"
+        if formatted not in existing_ssns:
+            new_ssn = formatted
+            break
+        base_ssn_num += 1
+
     name = "Test User"
     address = "123 Test St, Dallas, TX"
     phone = "(000) 000-0000"
 
+    # First: create a new borrower with a truly new SSN
     card_id = db.create_borrower(new_ssn, name, address, phone)
     print("New borrower Card_id (should NOT be None):", card_id)
 
@@ -112,8 +121,12 @@ def test_create_borrower_success_and_duplicate(db: LibraryDB):
         print("Borrower row:", cur.fetchone())
 
     # Second: attempt to create another borrower reusing an existing SSN
+    cur.execute("SELECT Ssn FROM BORROWER LIMIT 1;")
+    existing_ssn = cur.fetchone()[0]
+
     dup_card_id = db.create_borrower(existing_ssn, "Dup User", "Somewhere", "(111) 111-1111")
     print("Duplicate SSN attempt Card_id (should be None):", dup_card_id)
+
 
 # ===========================
 # checkout_book TESTS (error paths)
@@ -366,6 +379,7 @@ def test_pay_fines_behavior(db: LibraryDB):
     print("  After pay_fines:")
     cur.execute("SELECT Loan_id, Fine_amt, Paid FROM FINES")
     print("   FINES rows:", cur.fetchall())
+
 
 # ===========================
 # MAIN
