@@ -54,9 +54,11 @@ def createTables(conn):
                 )
     cur.execute(
             """CREATE TABLE IF NOT EXISTS FINES(
-            Loan_id INTEGER PRIMARY KEY AUTOINCREMENT, Fine_amt INTEGER NOT NULL, Paid INTEGER NOT NULL CHECK (Paid IN (0,1)),
+            Loan_id INTEGER PRIMARY KEY,
+            Fine_amt REAL NOT NULL,
+            Paid INTEGER NOT NULL CHECK(Paid IN (0,1)),
             FOREIGN KEY (Loan_id) REFERENCES BOOK_LOANS(Loan_id)
-            )"""
+            );"""
     )
     conn.commit()
 
