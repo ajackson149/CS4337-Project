@@ -129,7 +129,7 @@ def test_create_borrower_success_and_duplicate(db: LibraryDB):
 
 
 # ===========================
-# checkout_book TESTS (error paths)
+# checkout_book TESTS (error paths + implicit success)
 # ===========================
 
 def test_checkout_nonexistent_borrower(db: LibraryDB):
@@ -219,7 +219,7 @@ def test_checkout_book_already_out(db: LibraryDB):
     (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
     isbn = isbns[0]
 
-    # First checkout should succeed
+    # First checkout should succeed (happy-path success)
     print("  First checkout (should be True):")
     first = db.checkout_book(isbn, card_id)
     print("  Result:", first)
@@ -230,7 +230,7 @@ def test_checkout_book_already_out(db: LibraryDB):
     print("  Result:", second)
 
 # ===========================
-# checkin_book TESTS (query + selections)
+# checkin_book TESTS (query + selections) – SUCCESS CASES
 # ===========================
 
 def test_checkin_book_by_card_id(db: LibraryDB):
@@ -370,6 +370,118 @@ def test_checkin_book_by_borrower_name(db: LibraryDB):
         print("  No loans found to verify after name-based check-in.")
 
 # ===========================
+# checkin_book TESTS – FAILURE PATHS
+# ===========================
+
+def test_checkin_book_no_matching_loans(db: LibraryDB):
+    """
+    No BOOK_LOANS rows exist or none match the query → should return False.
+    """
+    print("\n[CHECKIN FAIL TEST] no matching loans for query")
+
+    reset_loans_and_fines(db)
+    # No loans at all; any query should yield "No active loans match this search."
+    result = db.checkin_book("does_not_match_anything", [1])
+    print("  Result (should be False):", result)
+
+
+def test_checkin_book_no_selections(db: LibraryDB):
+    """
+    There are matching loans but selections list is empty → should return False.
+    """
+    print("\n[CHECKIN FAIL TEST] no selections provided")
+
+    reset_loans_and_fines(db)
+    (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
+    cur = db.cur
+
+    # Create 1 active loan
+    cur.execute("""
+        INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
+        VALUES (?, ?, DATE('now', '-2 days'), DATE('now', '+12 days'), NULL)
+    """, (isbns[0], card_id))
+    db.conn.commit()
+
+    # Query by card_id (will match), but pass empty selections
+    result = db.checkin_book(card_id, [])
+    print("  Result (should be False):", result)
+
+    # Ensure loan is still out
+    cur.execute("SELECT Date_in FROM BOOK_LOANS WHERE Card_id = ?;", (card_id,))
+    row = cur.fetchone()
+    print("  Loan Date_in after failed check-in (should be None):", row[0])
+
+
+def test_checkin_book_too_many_selections(db: LibraryDB):
+    """
+    More than 3 selections → should return False, no books checked in.
+    """
+    print("\n[CHECKIN FAIL TEST] too many selections (>3)")
+
+    reset_loans_and_fines(db)
+    (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
+    cur = db.cur
+
+    # Create exactly 3 active loans
+    for i in range(3):
+        cur.execute("""
+            INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
+            VALUES (?, ?, DATE('now', '-3 days'), DATE('now', '+11 days'), NULL)
+        """, (isbns[i % len(isbns)], card_id))
+    db.conn.commit()
+
+    # Pass 4 selections (invalid); function should reject before mapping them
+    result = db.checkin_book(card_id, [1, 2, 3, 4])
+    print("  Result (should be False):", result)
+
+    # Verify all loans are still out
+    cur.execute("""
+        SELECT Loan_id, Date_in
+        FROM BOOK_LOANS
+        WHERE Card_id = ?
+        ORDER BY Loan_id
+    """, (card_id,))
+    rows = cur.fetchall()
+    print("  Loan rows after failed too-many selection:", rows)
+    all_out = all(date_in is None for (_loan_id, date_in) in rows)
+    print("  All loans still OUT (should be True):", all_out)
+
+
+def test_checkin_book_selection_out_of_range(db: LibraryDB):
+    """
+    A selection index is outside 1..len(results) → should return False.
+    """
+    print("\n[CHECKIN FAIL TEST] selection number out of range")
+
+    reset_loans_and_fines(db)
+    (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
+    cur = db.cur
+
+    # Create 2 active loans
+    for i in range(2):
+        cur.execute("""
+            INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
+            VALUES (?, ?, DATE('now', '-4 days'), DATE('now', '+10 days'), NULL)
+        """, (isbns[i % len(isbns)], card_id))
+    db.conn.commit()
+
+    # There will be 2 rows; selections [1, 3] → 3 is out of range
+    result = db.checkin_book(card_id, [1, 3])
+    print("  Result (should be False):", result)
+
+    # Verify loans are still out
+    cur.execute("""
+        SELECT Loan_id, Date_in
+        FROM BOOK_LOANS
+        WHERE Card_id = ?
+        ORDER BY Loan_id
+    """, (card_id,))
+    rows = cur.fetchall()
+    print("  Loan rows after out-of-range selection:", rows)
+    all_out = all(date_in is None for (_loan_id, date_in) in rows)
+    print("  All loans still OUT (should be True):", all_out)
+
+# ===========================
 # update_fines TESTS
 # ===========================
 
@@ -389,7 +501,7 @@ def test_update_fines_returned_and_out(db: LibraryDB):
     """, (isbn1, card_id))
     loan_returned = cur.lastrowid
 
-    # 2) Still out and overdue: Due 4 days ago => 4 * 0.25 = 1.00 (plus rounding quirks)
+    # 2) Still out and overdue: Due 4 days ago => 4 * 0.25 = 1.00
     today = datetime.date.today()
     due_date = today - datetime.timedelta(days=4)
     date_out = due_date - datetime.timedelta(days=10)
@@ -488,6 +600,19 @@ def test_pay_fines_behavior(db: LibraryDB):
     print("   FINES rows:", cur.fetchall())
 
 
+def test_pay_fines_no_fines(db: LibraryDB):
+    """
+    Borrower has no unpaid, return-eligible fines → pay_fines should return 0.0.
+    """
+    print("\n[PAY FINES FAIL-LIKE TEST] no fines to pay")
+
+    reset_loans_and_fines(db)
+    (_isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
+
+    # No BOOK_LOANS / FINES created; this borrower has nothing to pay.
+    total_paid = db.pay_fines(card_id)
+    print("  Total paid (should be 0.0):", total_paid)
+
 # ===========================
 # MAIN
 # ===========================
@@ -505,18 +630,23 @@ def main():
     print("\n=== create_borrower tests ===")
     test_create_borrower_success_and_duplicate(db)
 
-    print("\n=== checkout_book error-case tests ===")
+    print("\n=== checkout_book tests (error paths + success) ===")
     test_checkout_nonexistent_borrower(db)
     test_checkout_unpaid_fines(db)
     test_checkout_max_loans(db)
     test_checkout_nonexistent_book(db)
     test_checkout_book_already_out(db)
 
-    print("\n=== checkin_book tests ===")
+    print("\n=== checkin_book tests (success cases) ===")
     test_checkin_book_by_card_id(db)
     test_checkin_book_by_isbn(db)
     test_checkin_book_by_borrower_name(db)
 
+    print("\n=== checkin_book tests (failure cases) ===")
+    test_checkin_book_no_matching_loans(db)
+    test_checkin_book_no_selections(db)
+    test_checkin_book_too_many_selections(db)
+    test_checkin_book_selection_out_of_range(db)
 
     print("\n=== update_fines tests ===")
     test_update_fines_returned_and_out(db)
@@ -524,6 +654,7 @@ def main():
 
     print("\n=== pay_fines tests ===")
     test_pay_fines_behavior(db)
+    test_pay_fines_no_fines(db)
 
     db.conn.close()
 
