@@ -494,32 +494,36 @@ def test_update_fines_returned_and_out(db: LibraryDB):
     isbn2 = isbns[1] if len(isbns) > 1 else isbns[0]
     cur = db.cur
 
-    # 1) Returned late: Due 10 days ago, returned 5 days ago => 5 days late => 1.25
+    # Use fixed dates so the expected fine amounts are stable and easy to reason about.
+    # Returned late: Due 2025-01-10, returned 2025-01-15 => 5 full days late => 5 * 0.25 = 1.25
     cur.execute("""
         INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
-        VALUES (?, ?, DATE('now', '-20 days'), DATE('now', '-10 days'), DATE('now', '-5 days'))
+        VALUES (?, ?, '2025-01-01', '2025-01-10', '2025-01-15')
     """, (isbn1, card_id))
     loan_returned = cur.lastrowid
 
-    # 2) Still out and overdue: Due 4 days ago => 4 * 0.25 = 1.00
-    today = datetime.date.today()
-    due_date = today - datetime.timedelta(days=4)
-    date_out = due_date - datetime.timedelta(days=10)
-
+    # Still out and overdue: Due 2025-01-10 and still out on 'now' when update_fines runs.
+    # The exact fine depends on current date but should be > 0 if today > 2025-01-10.
     cur.execute("""
         INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
-        VALUES (?, ?, ?, ?, NULL)
-    """, (isbn2, card_id, date_out.isoformat(), due_date.isoformat()))
+        VALUES (?, ?, '2025-01-01', '2025-01-10', NULL)
+    """, (isbn2, card_id))
     loan_out = cur.lastrowid
+
     db.conn.commit()
 
+    # Run the fine calculation
     db.update_fines()
 
+    # Check the returned-late loan fine: should be exactly 1.25, Paid = 0
     cur.execute("SELECT Fine_amt, Paid FROM FINES WHERE Loan_id = ?", (loan_returned,))
-    print("  Returned-late loan FINES row:", cur.fetchone())
+    returned_row = cur.fetchone()
+    print("  Returned-late loan FINES row:", returned_row)
 
+    # Check the still-out overdue loan fine: should be positive, Paid = 0
     cur.execute("SELECT Fine_amt, Paid FROM FINES WHERE Loan_id = ?", (loan_out,))
-    print("  Still-out overdue loan FINES row:", cur.fetchone())
+    out_row = cur.fetchone()
+    print("  Still-out overdue loan FINES row:", out_row)
 
 
 def test_update_fines_respects_paid_and_updates_unpaid(db: LibraryDB):
