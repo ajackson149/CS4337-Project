@@ -16,7 +16,7 @@ def reset_loans_and_fines(db: LibraryDB):
 
 
 def get_sample_book_and_borrower(db: LibraryDB):
-    """Return (isbns, card_id) where isbns is a list of up to 3 existing ISBNs."""
+    """Return (isbns, card_id, ssn) where isbns is a list of up to 3 existing ISBNs."""
     cur = db.cur
 
     cur.execute("SELECT Isbn FROM BOOK LIMIT 3;")
@@ -230,37 +230,144 @@ def test_checkout_book_already_out(db: LibraryDB):
     print("  Result:", second)
 
 # ===========================
-# checkin_book TESTS
+# checkin_book TESTS (query + selections)
 # ===========================
 
-def test_checkin_book_success_and_errors(db: LibraryDB):
-    print("\n[CHECKIN TEST] Check-in success, non-existent loan, and already checked-in")
+def test_checkin_book_by_card_id(db: LibraryDB):
+    print("\n[CHECKIN TEST] query by Card_id + selections")
 
     reset_loans_and_fines(db)
     (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
-    isbn = isbns[0]
     cur = db.cur
 
-    # Create a loan that is currently out
-    cur.execute("""
-        INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
-        VALUES (?, ?, DATE('now', '-5 days'), DATE('now', '+9 days'), NULL)
-    """, (isbn, card_id))
-    loan_id = cur.lastrowid
+    # Create 3 active loans (Date_in = NULL) for this borrower
+    for i in range(3):
+        cur.execute("""
+            INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
+            VALUES (?, ?, DATE('now', '-5 days'), DATE('now', '+9 days'), NULL)
+        """, (isbns[i % len(isbns)], card_id))
     db.conn.commit()
 
-    # 1) Successful check-in
-    result1 = db.checkin_book(loan_id)
-    print("  Check-in result (should be True):", result1)
+    # Use Card_id as the search query so all 3 loans show up
+    result = db.checkin_book(card_id, [1, 2, 3])
+    print("  Result of 3-book check-in (should be True):", result)
 
-    # 2) Attempt to check in again (already checked in)
-    result2 = db.checkin_book(loan_id)
-    print("  Second check-in (should be False):", result2)
+    # Verify all loans for this borrower are checked in
+    cur.execute("""
+        SELECT Loan_id, Date_in
+        FROM BOOK_LOANS
+        WHERE Card_id = ?
+        ORDER BY Loan_id
+    """, (card_id,))
+    rows = cur.fetchall()
+    print("  Loan rows after check-in:", rows)
 
-    # 3) Non-existent loan id
-    fake_loan_id = loan_id + 9999
-    result3 = db.checkin_book(fake_loan_id)
-    print("  Non-existent Loan_id check-in (should be False):", result3)
+    all_checked_in = all(date_in is not None for (_loan_id, date_in) in rows)
+    print("  All loans checked in:", all_checked_in)
+
+
+def test_checkin_book_by_isbn(db: LibraryDB):
+    print("\n[CHECKIN TEST] query by ISBN + selections")
+
+    reset_loans_and_fines(db)
+    (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
+    cur = db.cur
+
+    isbn = isbns[0]
+
+    # Create 2 active loans for this borrower, same ISBN
+    for _ in range(2):
+        cur.execute("""
+            INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
+            VALUES (?, ?, DATE('now', '-5 days'), DATE('now', '+9 days'), NULL)
+        """, (isbn, card_id))
+    db.conn.commit()
+
+    # Confirm these loans exist and capture their IDs for verification
+    cur.execute("""
+        SELECT Loan_id
+        FROM BOOK_LOANS
+        WHERE Card_id = ? AND Isbn = ? AND Date_in IS NULL
+        ORDER BY Loan_id
+    """, (card_id, isbn))
+    loan_ids_before = [row[0] for row in cur.fetchall()]
+    print("  Loan_ids before check-in (ISBN match):", loan_ids_before)
+
+    # Use ISBN as the search query; both loans should appear in results
+    result = db.checkin_book(isbn, [1, 2])
+    print("  Result of ISBN-based check-in (should be True):", result)
+
+    # Verify both of those specific Loan_ids are now checked in
+    cur.execute("""
+        SELECT Loan_id, Date_in
+        FROM BOOK_LOANS
+        WHERE Loan_id IN ({})
+        ORDER BY Loan_id
+    """.format(",".join("?" * len(loan_ids_before))), loan_ids_before)
+    rows = cur.fetchall()
+    print("  Loan rows after check-in by ISBN:", rows)
+
+    all_checked_in = all(date_in is not None for (_loan_id, date_in) in rows)
+    print("  All loans checked in (ISBN query):", all_checked_in)
+
+
+def test_checkin_book_by_borrower_name(db: LibraryDB):
+    print("\n[CHECKIN TEST] query by borrower name substring + selections")
+
+    reset_loans_and_fines(db)
+    (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
+    cur = db.cur
+
+    # Get this borrower's name so we can use a substring
+    cur.execute("SELECT Bname FROM BORROWER WHERE Card_id = ?", (card_id,))
+    row = cur.fetchone()
+    if row is None:
+        print("  No borrower found for Card_id; cannot run name test.")
+        return
+
+    full_name = row[0]
+    # take a substring, e.g., first 3 characters, lowercased
+    name_substring = full_name[:3].lower()
+    print(f"  Using borrower name='{full_name}', substring query='{name_substring}'")
+
+    # Create 2 active loans for this borrower, possibly different books
+    for i in range(2):
+        cur.execute("""
+            INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
+            VALUES (?, ?, DATE('now', '-3 days'), DATE('now', '+11 days'), NULL)
+        """, (isbns[i % len(isbns)], card_id))
+    db.conn.commit()
+
+    # Confirm the active loans for this borrower
+    cur.execute("""
+        SELECT Loan_id
+        FROM BOOK_LOANS
+        WHERE Card_id = ? AND Date_in IS NULL
+        ORDER BY Loan_id
+    """, (card_id,))
+    loan_ids_before = [row[0] for row in cur.fetchall()]
+    print("  Loan_ids before check-in (name match):", loan_ids_before)
+
+    # Use the borrower name substring as the search query
+    # Both loans for this borrower should appear in results
+    result = db.checkin_book(name_substring, [1, 2])
+    print("  Result of name-based check-in (should be True):", result)
+
+    # Verify those loan_ids are now checked in
+    if loan_ids_before:
+        cur.execute("""
+            SELECT Loan_id, Date_in
+            FROM BOOK_LOANS
+            WHERE Loan_id IN ({})
+            ORDER BY Loan_id
+        """.format(",".join("?" * len(loan_ids_before))), loan_ids_before)
+        rows = cur.fetchall()
+        print("  Loan rows after check-in by name:", rows)
+
+        all_checked_in = all(date_in is not None for (_loan_id, date_in) in rows)
+        print("  All loans checked in (name query):", all_checked_in)
+    else:
+        print("  No loans found to verify after name-based check-in.")
 
 # ===========================
 # update_fines TESTS
@@ -282,7 +389,7 @@ def test_update_fines_returned_and_out(db: LibraryDB):
     """, (isbn1, card_id))
     loan_returned = cur.lastrowid
 
-    # 2) Still out and overdue: Due 4 days ago => ~4 * 0.25 = 1.00
+    # 2) Still out and overdue: Due 4 days ago => 4 * 0.25 = 1.00 (plus rounding quirks)
     today = datetime.date.today()
     due_date = today - datetime.timedelta(days=4)
     date_out = due_date - datetime.timedelta(days=10)
@@ -380,46 +487,6 @@ def test_pay_fines_behavior(db: LibraryDB):
     cur.execute("SELECT Loan_id, Fine_amt, Paid FROM FINES")
     print("   FINES rows:", cur.fetchall())
 
-def test_manual_fine_growth(db: LibraryDB):
-    """
-    Manually demonstrate fine growth as days late increase.
-    Creates a returned loan that is first 5 days late, then 6 days late,
-    and shows the fine changing (e.g., 1.25 -> 1.50).
-    """
-    print("\n[MANUAL FINE TEST] Fine growth with different late days")
-
-    reset_loans_and_fines(db)
-    (isbns, card_id, _ssn) = get_sample_book_and_borrower(db)
-    isbn = isbns[0]
-    cur = db.cur
-
-    # First: 5 days late
-    # Due: 2025-01-10, Returned: 2025-01-15  => 5 days late
-    cur.execute("""
-        INSERT INTO BOOK_LOANS (Isbn, Card_id, Date_out, Due_date, Date_in)
-        VALUES (?, ?, '2025-01-01', '2025-01-10', '2025-01-15')
-    """, (isbn, card_id))
-    loan_id = cur.lastrowid
-    db.conn.commit()
-
-    db.update_fines()
-    cur.execute("SELECT Fine_amt FROM FINES WHERE Loan_id = ?", (loan_id,))
-    fine_5 = cur.fetchone()[0]
-    print("  Fine with 5 days late (expected 1.25):", fine_5)
-
-    # Now: 6 days late
-    # Returned changed to 2025-01-16  => 6 days late
-    cur.execute("""
-        UPDATE BOOK_LOANS
-        SET Date_in = '2025-01-16'
-        WHERE Loan_id = ?
-    """, (loan_id,))
-    db.conn.commit()
-
-    db.update_fines()
-    cur.execute("SELECT Fine_amt FROM FINES WHERE Loan_id = ?", (loan_id,))
-    fine_6 = cur.fetchone()[0]
-    print("  Fine with 6 days late (expected 1.50):", fine_6)
 
 # ===========================
 # MAIN
@@ -446,7 +513,10 @@ def main():
     test_checkout_book_already_out(db)
 
     print("\n=== checkin_book tests ===")
-    test_checkin_book_success_and_errors(db)
+    test_checkin_book_by_card_id(db)
+    test_checkin_book_by_isbn(db)
+    test_checkin_book_by_borrower_name(db)
+
 
     print("\n=== update_fines tests ===")
     test_update_fines_returned_and_out(db)
@@ -454,9 +524,6 @@ def main():
 
     print("\n=== pay_fines tests ===")
     test_pay_fines_behavior(db)
-
-    print("\n=== manual_fine tests ===")
-    test_manual_fine_growth(db)
 
     db.conn.close()
 

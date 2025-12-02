@@ -175,41 +175,140 @@ class LibraryDB:
         print("Checkout successful")
         return True
 
+        # -------------------------------------------------
+    # Check-in (interactive: search + select up to 3)
     # -------------------------------------------------
-    # Check-in
-    # -------------------------------------------------
-    def checkin_book(self, loan_id: int):
-        """
-        Check in a single loan by its Loan_id.
+    def checkin_book(self, query, selections):
+        search = f"%{query.lower()}%"
 
-        - Loan must exist.
-        - Loan must currently be OUT (Date_in IS NULL).
-        Sets Date_in = today and commits.
-        Returns True on success, False on error.
+        sql = """
+        SELECT BL.Loan_id, BL.Isbn, B.Title, BL.Card_id, BR.Bname, BL.Date_out, BL.Due_date
+        FROM BOOK_LOANS BL
+        JOIN BOOK B ON BL.Isbn = B.Isbn
+        JOIN BORROWER BR ON BL.Card_id = BR.Card_id
+        WHERE BL.Date_in IS NULL
+        AND (LOWER(BL.Isbn) LIKE ?
+            OR LOWER(BL.Card_id) LIKE ?
+            OR LOWER(BR.Bname) LIKE ?)
+        ORDER BY BL.Date_out;
         """
-        # Find the loan
-        self.cur.execute(
-            "SELECT Date_in FROM BOOK_LOANS WHERE Loan_id = ?",
-            (loan_id,)
-        )
-        row = self.cur.fetchone()
-        if row is None:
-            print("ERROR: Loan not found.")
+
+        self.cur.execute(sql, (search, search, search))
+        rows = self.cur.fetchall()
+
+        # No matching loans
+        if len(rows) == 0:
+            print("No active loans match this search.")
             return False
 
-        date_in = row[0]
-        if date_in is not None:
-            print("ERROR: Book is already checked in.")
+        # Convert rows to dictionaries
+        results = []
+        for row in rows:
+            results.append({
+                "loan_id": row[0],
+                "isbn": row[1],
+                "title": row[2],
+                "card_id": row[3],
+                "borrower_name": row[4],
+                "date_out": row[5],
+                "due_date": row[6]
+            })
+
+        # Validate selections are 1-based row numbers
+        if len(selections) == 0:
+            print("Error: No selections provided.")
             return False
 
-        # Perform check-in
-        self.cur.execute(
-            "UPDATE BOOK_LOANS SET Date_in = DATE('now') WHERE Loan_id = ?",
-            (loan_id,)
-        )
+        if len(selections) > 3:
+            print("Error: Cannot check in more than 3 books.")
+            return False
+
+        if any(s < 1 or s > len(results) for s in selections):
+            print("Error: Selection number out of range.")
+            return False
+
+        # Map selections (1-based index) to loan_ids
+        loan_ids = [results[s-1]["loan_id"] for s in selections]
+
+        # Check in each selected loan
+        for loan_id in loan_ids:
+            self.cur.execute("""
+                UPDATE BOOK_LOANS
+                SET Date_in = DATE('now')
+                WHERE Loan_id = ?
+            """, (loan_id,))
         self.conn.commit()
-        print("Check-in successful.")
+
+        # Update fines after check-in
+        self.update_fines()
+
+        print("Books successfully checked in.")
         return True
+
+    
+        # -------------------------------------------------
+    # Check-in search helper (for locating loans)
+    # -------------------------------------------------
+    def find_loans_for_checkin(self, query):
+        """
+        Locate BOOK_LOANS tuples that are currently OUT (Date_in IS NULL)
+        by searching on any of:
+          - BOOK.Isbn
+          - BORROWER.Card_id
+          - any substring of BORROWER.Bname
+
+        Returns a list of dicts:
+          {
+            "loan_id": int,
+            "isbn": str,
+            "title": str,
+            "card_id": str,
+            "borrower_name": str,
+            "date_out": str,
+            "due_date": str,
+          }
+        """
+        search = f"%{query.lower()}%"
+
+        sql = """
+        SELECT
+            BL.Loan_id,
+            BL.Isbn,
+            B.Title,
+            BL.Card_id,
+            BR.Bname,
+            BL.Date_out,
+            BL.Due_date
+        FROM BOOK_LOANS BL
+        JOIN BOOK B ON BL.Isbn = B.Isbn
+        JOIN BORROWER BR ON BL.Card_id = BR.Card_id
+        WHERE
+            BL.Date_in IS NULL
+            AND (
+                LOWER(B.Isbn)   LIKE ?
+                OR LOWER(BL.Card_id) LIKE ?
+                OR LOWER(BR.Bname)   LIKE ?
+            )
+        ORDER BY BL.Date_out;
+        """
+
+        self.cur.execute(sql, (search, search, search))
+        rows = self.cur.fetchall()
+
+        results = []
+        for row in rows:
+            results.append({
+                "loan_id":       row[0],
+                "isbn":          row[1],
+                "title":         row[2],
+                "card_id":       row[3],
+                "borrower_name": row[4],
+                "date_out":      row[5],
+                "due_date":      row[6],
+            })
+
+        return results
+
 
     # -------------------------------------------------
     # Update fines
