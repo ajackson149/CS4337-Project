@@ -13,27 +13,19 @@ class LibraryGUI:
         # Database
         self.db = LibraryDB(DB_PATH)
 
-        # Logged-in borrower (dict: {"card_id": ..., "name": ...} or None)
+        # Logged-in borrower
         self.current_user = None
 
-        # Main container
         self.container = ttk.Frame(self.root)
         self.container.pack(fill="both", expand=True)
 
-        # Two main screens: auth and main
         self.auth_frame = ttk.Frame(self.container)
         self.main_frame = ttk.Frame(self.container)
-
-        # Build both UIs
         self._build_auth_frame()
         self._build_main_frame()
 
-        # Start on auth screen
         self.show_auth_screen()
 
-    # ------------------------------------------------------------------
-    # Screen switching
-    # ------------------------------------------------------------------
     def show_auth_screen(self):
         """Show the login / create-account screen."""
         self.main_frame.pack_forget()
@@ -58,16 +50,14 @@ class LibraryGUI:
             if hasattr(self, "fines_card_var"):
                 self.fines_card_var.set("")
 
-    # ------------------------------------------------------------------
-    # Auth / start screen
-    # ------------------------------------------------------------------
+
     def _build_auth_frame(self):
         """Create the start page: login on the left, sign-up on the right."""
-        # Layout: two columns
+
         self.auth_frame.columnconfigure(0, weight=1, uniform="col")
         self.auth_frame.columnconfigure(1, weight=1, uniform="col")
 
-        # ------------------ Login panel ------------------
+        # Login panel
         login_group = ttk.LabelFrame(self.auth_frame, text="Log In")
         login_group.grid(
             row=0,
@@ -106,7 +96,7 @@ class LibraryGUI:
             command=self.handle_login,
         ).grid(row=2, column=0, columnspan=2, pady=10)
 
-        # ------------------ Create Borrower panel ------------------
+        # Create borrower
         create_group = ttk.LabelFrame(self.auth_frame, text="Create New Borrower")
         create_group.grid(
             row=0,
@@ -153,7 +143,7 @@ class LibraryGUI:
             )
             return
 
-        # Simple authentication using the database directly
+        # Authenticate the borrower
         self.db.cur.execute(
             """
             SELECT Card_id, Bname
@@ -191,7 +181,7 @@ class LibraryGUI:
             )
             return
 
-        # Try to create borrower via LibraryDB
+        # Create the borrower
         card_id = self.db.create_borrower(ssn, name, address, phone, password)
         if not card_id:
             messagebox.showerror(
@@ -212,16 +202,14 @@ class LibraryGUI:
             f"You are now logged in.",
         )
 
-        # Immediately log the new borrower in
+        # Log in the borrower after creating
         self.current_user = {"card_id": card_id, "name": name}
         self.show_main_screen()
 
-    # ------------------------------------------------------------------
-    # Main screen: Notebook + tabs
-    # ------------------------------------------------------------------
+    # Main screen
     def _build_main_frame(self):
         """Build the main app screen shown after login."""
-        # Top: user info + logout
+        # SHow user info at the top
         top_bar = ttk.Frame(self.main_frame)
         top_bar.pack(fill="x", pady=(0, 10))
 
@@ -244,28 +232,25 @@ class LibraryGUI:
             pady=5,
         )
 
-        # Notebook with tabs
         self.notebook = ttk.Notebook(self.main_frame)
         self.notebook.pack(fill="both", expand=True, padx=5, pady=5)
 
-        # ----- Tab 1: Search & Checkout -----
+        # Search and check out
         search_tab = ttk.Frame(self.notebook)
         self.notebook.add(search_tab, text="Search & Checkout")
         self._build_search_tab(search_tab)
 
-        # ----- Tab 2: Check In Book -----
+        # Check in the book
         checkin_tab = ttk.Frame(self.notebook)
         self.notebook.add(checkin_tab, text="Check In Book")
         self._build_checkin_tab(checkin_tab)
 
-        # ----- Tab 3: Fines -----
+        # Fines tab
         fines_tab = ttk.Frame(self.notebook)
         self.notebook.add(fines_tab, text="Fines")
         self._build_fines_tab(fines_tab)
 
-    # ------------------------------------------------------------------
-    # Tab 1: Search & Checkout
-    # ------------------------------------------------------------------
+    # Search and CHeckout
     def _build_search_tab(self, parent):
         """Build the Search & Checkout tab."""
         search_frame = parent
@@ -394,9 +379,7 @@ class LibraryGUI:
                 "Checkout failed. See console for details.",
             )
 
-    # ------------------------------------------------------------------
-    # Tab 2: Check In Book
-    # ------------------------------------------------------------------
+    # Check In the book
     def _build_checkin_tab(self, parent):
         """Build the Check In Book tab."""
         frame = parent
@@ -541,9 +524,7 @@ class LibraryGUI:
                 "Check-in failed. See console output for details.",
             )
 
-    # ------------------------------------------------------------------
-    # Tab 3: Fines
-    # ------------------------------------------------------------------
+    # Tab to pay fines
     def _build_fines_tab(self, parent):
         """Build the Fines tab."""
         frame = parent
@@ -607,9 +588,7 @@ class LibraryGUI:
                 f"Paid ${amount:.2f} in fines.",
             )
 
-    # ------------------------------------------------------------------
-    # Logout
-    # ------------------------------------------------------------------
+    # Log the use out
     def logout(self):
         """Log the current user out and return to the start screen."""
         self.current_user = None
