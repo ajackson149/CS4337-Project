@@ -17,7 +17,7 @@ class LibraryDB:
     # -------------------------------------------------
     # Borrower creation
     # -------------------------------------------------
-    def create_borrower(self, ssn: str, name: str, address: str, phone: str):
+    def create_borrower(self, ssn: str, name: str, address: str, phone: str, password: str | None = None):
         """
         Create a new borrower in BORROWER.
 
@@ -29,6 +29,11 @@ class LibraryDB:
         name = name.strip()
         address = address.strip()
         phone = phone.strip()
+        password = (password or "").strip()
+
+        # Default password if none is given
+        if not password:
+            return None
 
         # Check SSN uniqueness
         self.cur.execute("SELECT 1 FROM BORROWER WHERE Ssn = ?", (ssn,))
@@ -51,17 +56,30 @@ class LibraryDB:
                 next_num = 1
 
         card_id = f"ID{next_num:06d}"
-
+        
         self.cur.execute(
             """
-            INSERT INTO BORROWER (Card_id, Ssn, Bname, Address, Phone)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO BORROWER (Card_id, Ssn, Bname, Address, Phone, Password)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (card_id, ssn, name, address, phone),
+            (card_id, ssn, name, address, phone, password),
         )
         self.conn.commit()
         print(f"Borrower created with Card_id={card_id}")
         return card_id
+    
+    # Authenticate the borrower
+    def authenticate_borrower(self, card_id: str, password: str):
+        card_id = card_id.strip()
+        password = password.strip()
+        self.cur.execute(
+            "SELECT Card_id, Bname FROM BORROWER WHERE Card_id = ? AND PASSWORD = ?",
+            (card_id, password),
+        )
+        row = self.cur.fetchone()
+        if row is None:
+            return None
+        return {"card_id": row[0], "name": row[1]}
 
     # -------------------------------------------------
     # Search books
