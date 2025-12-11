@@ -14,5 +14,7 @@ run init_db.py to initialize the database, this will create the library.db file.
 run gui.py, this will show the UI interface where you can check out books and check in books
 
 
+As a librarian the librarian password is adminpassword
+
 
 Shoot me a message on discord if you have trouble with anything.
