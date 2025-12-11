@@ -86,7 +86,6 @@ def importCsv(conn, tableName, csvPath, columns):
     conn.commit()
 
 def importBorrowers(conn, csvPath):
-    # special import for BORROWER so Password is NOT NULL
     with csvPath.open("r", encoding ="utf-8") as f:
         reader = csv.DictReader(f)
         rows = []

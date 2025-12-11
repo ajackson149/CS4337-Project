@@ -8,7 +8,7 @@ class LibraryGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Library Management System")
-        self.root.geometry("900x600")
+        self.root.geometry("1200x600")
 
         # Database
         self.db = LibraryDB(DB_PATH)
@@ -43,10 +43,14 @@ class LibraryGUI:
             )
             if hasattr(self, "fines_card_var"):
                 self.fines_card_var.set(self.current_user["card_id"])
+            if hasattr(self, "checkin_card_var"):
+                self.checkin_card_var.set(self.current_user["card_id"])
         else:
             self.user_label.config(text="Not logged in")
             if hasattr(self, "fines_card_var"):
                 self.fines_card_var.set("")
+            if hasattr(self, "checkin_card_var"):
+                self.checkin_card_var.set("")
 
 
     def build_auth_frame(self):
@@ -161,6 +165,8 @@ class LibraryGUI:
         self.current_user = {"card_id": row[0], "name": row[1]}
         self.login_password_var.set("")  # clear password field
         self.show_main_screen()
+        self.checkin_search_loans()
+        self.perform_search()
 
     def handle_create_borrower(self):
         ssn = self.new_entries["SSN:"].get().strip()
@@ -181,7 +187,7 @@ class LibraryGUI:
         if not card_id:
             messagebox.showerror(
                 "Error",
-                "Failed to create borrower (SSN may already exist).",
+                "Failed to create borrower. SSN already connected to an account.",
             )
             return
 
@@ -244,6 +250,8 @@ class LibraryGUI:
         self.notebook.add(fines_tab, text="Fines")
         self.build_fines_tab(fines_tab)
 
+        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
+
     # Search and CHeckout
     def build_search_tab(self, parent):
         search_frame = parent
@@ -265,7 +273,7 @@ class LibraryGUI:
         ).grid(row=0, column=2, sticky="w", pady=5, padx=5)
 
         # Results table
-        columns = ("isbn", "title", "authors", "status")
+        columns = ("isbn", "title", "authors", "status", "holder")
         self.results_tree = ttk.Treeview(
             search_frame,
             columns=columns,
@@ -285,11 +293,13 @@ class LibraryGUI:
         self.results_tree.heading("title", text="Title")
         self.results_tree.heading("authors", text="Authors")
         self.results_tree.heading("status", text="Status")
+        self.results_tree.heading("holder", text = "Card ID")
 
         self.results_tree.column("isbn", width=120, anchor="w")
         self.results_tree.column("title", width=260, anchor="w")
         self.results_tree.column("authors", width=260, anchor="w")
         self.results_tree.column("status", width=80, anchor="center")
+        self.results_tree.column("holder", width=120, anchor="center")
 
         # Make treeview expandable
         search_frame.rowconfigure(1, weight=1)
@@ -312,6 +322,24 @@ class LibraryGUI:
 
         # Insert new rows
         for book in results:
+            holder = ""
+
+            # If the book is OUT, find which Card_id currently has it
+            if book["status"] == "OUT":
+                self.db.cur.execute(
+                    """
+                    SELECT Card_id
+                    FROM BOOK_LOANS
+                    WHERE Isbn = ? AND Date_in IS NULL
+                    ORDER BY Date_out DESC
+                    LIMIT 1
+                    """,
+                    (book["isbn"],),
+                )
+                row = self.db.cur.fetchone()
+                if row:
+                    holder = row[0]
+
             self.results_tree.insert(
                 "",
                 "end",
@@ -320,8 +348,10 @@ class LibraryGUI:
                     book["title"],
                     book["authors"],
                     book["status"],
+                    holder,  # new column
                 ),
             )
+
 
     def checkout_selected_book(self):
         if not self.current_user:
@@ -376,30 +406,36 @@ class LibraryGUI:
 
         ttk.Label(
             frame,
-            text="Search active loans (ISBN, Card ID, or Borrower Name):",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=5, padx=5)
+            text="Logged In Card ID:",
+        ).grid(row=0, column=0, sticky="w", pady=5, padx=5)
 
-        self.checkin_search_var = tk.StringVar()
+        self.checkin_card_var = tk.StringVar()
         ttk.Entry(
             frame,
-            textvariable=self.checkin_search_var,
+            textvariable=self.checkin_card_var,
             width=40,
-        ).grid(row=1, column=0, sticky="w", pady=5, padx=5)
+            state="readonly",
+        ).grid(row=0, column=1, sticky="w", pady=5, padx=5)
 
-        ttk.Button(
-            frame,
-            text="Find Loans",
-            command=self.checkin_search_loans,
-        ).grid(row=1, column=1, sticky="w", pady=5, padx=5)
-
-        # Listbox for showing loans
-        self.checkin_loans_listbox = tk.Listbox(
-            frame,
-            width=80,
-            height=12,
+        # Treeview for showing loans (similar style to Search & Checkout)
+        columns = (
+            "isbn",
+            "title",
+            "authors",
+            "borrower",
+            "card_id",
+            "date_out",
+            "due_date",
         )
-        self.checkin_loans_listbox.grid(
-            row=2,
+        self.checkin_tree = ttk.Treeview(
+            frame,
+            columns=columns,
+            show="headings",
+            height=12,
+            selectmode="extended",  # allow multi-select check-in
+        )
+        self.checkin_tree.grid(
+            row=1,
             column=0,
             columnspan=2,
             sticky="nsew",
@@ -407,110 +443,135 @@ class LibraryGUI:
             padx=5,
         )
 
-        # Make listbox expandable
-        frame.rowconfigure(2, weight=1)
+        # Headings
+        self.checkin_tree.heading("isbn", text="ISBN")
+        self.checkin_tree.heading("title", text="Title")
+        self.checkin_tree.heading("authors", text="Author(s)")
+        self.checkin_tree.heading("borrower", text="Name")
+        self.checkin_tree.heading("card_id", text="Card ID")
+        self.checkin_tree.heading("date_out", text="Out")
+        self.checkin_tree.heading("due_date", text="Due")
+
+        # Column widths
+        self.checkin_tree.column("isbn", width=110, anchor="w")
+        self.checkin_tree.column("title", width=180, anchor="w")
+        self.checkin_tree.column("authors", width=170, anchor="w")
+        self.checkin_tree.column("borrower", width=150, anchor="w")
+        self.checkin_tree.column("card_id", width=90, anchor="center")
+        self.checkin_tree.column("date_out", width=80, anchor="center")
+        self.checkin_tree.column("due_date", width=80, anchor="center")
+
+        # Make treeview expandable
+        frame.rowconfigure(1, weight=1)
         frame.columnconfigure(0, weight=1)
-
-        # Selections entry
-        ttk.Label(
-            frame,
-            text=(
-                "Selection numbers to check in "
-                "(comma-separated, e.g., 1,2):"
-            ),
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=5, padx=5)
-
-        self.checkin_selections_var = tk.StringVar()
-        ttk.Entry(
-            frame,
-            textvariable=self.checkin_selections_var,
-            width=30,
-        ).grid(row=4, column=0, sticky="w", pady=5, padx=5)
 
         ttk.Button(
             frame,
             text="Check In Selected Loans",
             command=self.checkin_selected_loans,
-        ).grid(row=4, column=1, sticky="w", pady=5, padx=5)
+        ).grid(row=2, column=1, sticky="e", pady=5, padx=5)
 
         # Store last search query so we can pass it to checkin_book
         self.checkin_last_query = ""
 
+
+        # Make listbox expandable
+        frame.rowconfigure(2, weight=1)
+        frame.columnconfigure(0, weight=1)
+
+        self.checkin_last_query = ""
+
+
     def checkin_search_loans(self):
-        query = self.checkin_search_var.get().strip()
-        self.checkin_last_query = query
-
-        self.checkin_loans_listbox.delete(0, tk.END)
-
-        if not query:
+        if not self.current_user:
             messagebox.showerror(
-                "Error",
-                "Please enter a search query.",
+                "Not logged in",
+                "You must log in to check in books.",
             )
             return
+
+        # Use the logged-in borrower's Card ID as the search query
+        query = self.current_user["card_id"]
+        self.checkin_last_query = query
+
+        # Clear the tree
+        for item in self.checkin_tree.get_children():
+            self.checkin_tree.delete(item)
 
         loans = self.db.find_loans_for_checkin(query)
 
-        if not loans:
-            self.checkin_loans_listbox.insert(
-                tk.END,
-                "No active loans found.",
-            )
-            return
+        for loan in loans:
+            isbn = loan["isbn"]
 
-        for i, loan in enumerate(loans, start=1):
-            line = (
-                f"{i}. {loan['title']} - {loan['borrower_name']} "
-                f"(Card {loan['card_id']})  "
-                f"Out: {loan['date_out']}  Due: {loan['due_date']}"
+            # 🔹 Inline query to get authors for this ISBN
+            self.db.cur.execute(
+                """
+                SELECT GROUP_CONCAT(A.Name, ', ')
+                FROM BOOK_AUTHORS BA
+                JOIN AUTHORS A ON BA.Author_id = A.Author_id
+                WHERE BA.Isbn = ?
+                """,
+                (isbn,),
             )
-            self.checkin_loans_listbox.insert(tk.END, line)
+            row = self.db.cur.fetchone()
+            authors = row[0] if row and row[0] is not None else ""
+
+            # Insert row into the check-in tree
+            self.checkin_tree.insert(
+                "",
+                "end",
+                values=(
+                    isbn,
+                    loan["title"],
+                    authors,
+                    loan["borrower_name"],
+                    loan["card_id"],
+                    loan["date_out"],
+                    loan["due_date"],
+                ),
+            )
+
 
     def checkin_selected_loans(self):
-        if not self.checkin_last_query:
+        if not self.current_user:
             messagebox.showerror(
-                "Error",
-                "Please search for loans before trying to check them in.",
+                "Not logged in",
+                "You must be logged in to check in books.",
             )
             return
 
-        raw = self.checkin_selections_var.get().strip()
-        if not raw:
+        selected_items = self.checkin_tree.selection()
+        if not selected_items:
             messagebox.showerror(
                 "Error",
-                "Please enter selection number(s) to check in.",
+                "Please select at least one loan to check in.",
             )
             return
 
-        try:
-            selections = [int(x.strip()) for x in raw.split(",") if x.strip()]
-        except ValueError:
-            messagebox.showerror(
-                "Error",
-                "Selections must be integer numbers (e.g., 1,2,3).",
-            )
-            return
+        # Map selected tree rows to 1-based positions expected by checkin_book()
+        all_items = list(self.checkin_tree.get_children())
+        selections = []
+        for item_id in selected_items:
+            idx = all_items.index(item_id)  # 0-based
+            selections.append(idx + 1)      # convert to 1-based
 
-        if not selections:
-            messagebox.showerror(
-                "Error",
-                "No valid selections found.",
-            )
-            return
+        query = self.checkin_last_query or self.current_user["card_id"]
 
-        success = self.db.checkin_book(self.checkin_last_query, selections)
+        success = self.db.checkin_book(query, selections)
         if success:
             messagebox.showinfo(
                 "Success",
                 "Books successfully checked in.",
             )
-            # Refresh the search to update the list of OUT loans
+            # Refresh list of OUT loans
             self.checkin_search_loans()
         else:
             messagebox.showerror(
                 "Error",
                 "Check-in failed. See console output for details.",
             )
+
+
 
     # Tab to pay fines
     def build_fines_tab(self, parent):
@@ -572,6 +633,12 @@ class LibraryGUI:
                 "Fines Paid",
                 f"Paid ${amount:.2f} in fines.",
             )
+    def on_tab_changed(self, event):
+        if not self.current_user:
+            return
+        self.checkin_search_loans()
+        self.perform_search()
+        
 
     # Log the use out
     def logout(self):
