@@ -841,8 +841,8 @@ class LibraryGUI:
         amount = self.db.pay_fines(card_id)
         if amount is None or amount == 0.0:
             messagebox.showinfo(
-                "No Fines",
-                "There are no unpaid fines for returned books for that borrower.",
+                "Error in fines",
+                "You can not pay fines at this time. Either it is none or there are books checked out.",
             )
         else:
             messagebox.showinfo(
