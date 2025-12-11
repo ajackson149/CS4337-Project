@@ -21,19 +21,17 @@ class LibraryGUI:
 
         self.auth_frame = ttk.Frame(self.container)
         self.main_frame = ttk.Frame(self.container)
-        self._build_auth_frame()
-        self._build_main_frame()
+        self.build_auth_frame()
+        self.build_main_frame()
 
         self.show_auth_screen()
 
     def show_auth_screen(self):
-        """Show the login / create-account screen."""
         self.main_frame.pack_forget()
         self.auth_frame.pack(fill="both", expand=True, padx=20, pady=20)
         self.root.title("Library - Login or Create Borrower")
 
     def show_main_screen(self):
-        """Show the main screen (tabs) after login."""
         self.auth_frame.pack_forget()
         self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
@@ -51,8 +49,7 @@ class LibraryGUI:
                 self.fines_card_var.set("")
 
 
-    def _build_auth_frame(self):
-        """Create the start page: login on the left, sign-up on the right."""
+    def build_auth_frame(self):
 
         self.auth_frame.columnconfigure(0, weight=1, uniform="col")
         self.auth_frame.columnconfigure(1, weight=1, uniform="col")
@@ -132,7 +129,6 @@ class LibraryGUI:
         ).grid(row=len(labels), column=0, columnspan=2, pady=10)
 
     def handle_login(self):
-        """Handle login from the start screen."""
         card_id = self.login_card_var.get().strip()
         password = self.login_password_var.get().strip()
 
@@ -167,7 +163,6 @@ class LibraryGUI:
         self.show_main_screen()
 
     def handle_create_borrower(self):
-        """Handle creation of a new borrower from the start screen."""
         ssn = self.new_entries["SSN:"].get().strip()
         name = self.new_entries["Name:"].get().strip()
         address = self.new_entries["Address:"].get().strip()
@@ -207,8 +202,7 @@ class LibraryGUI:
         self.show_main_screen()
 
     # Main screen
-    def _build_main_frame(self):
-        """Build the main app screen shown after login."""
+    def build_main_frame(self):
         # SHow user info at the top
         top_bar = ttk.Frame(self.main_frame)
         top_bar.pack(fill="x", pady=(0, 10))
@@ -238,21 +232,20 @@ class LibraryGUI:
         # Search and check out
         search_tab = ttk.Frame(self.notebook)
         self.notebook.add(search_tab, text="Search & Checkout")
-        self._build_search_tab(search_tab)
+        self.build_search_tab(search_tab)
 
         # Check in the book
         checkin_tab = ttk.Frame(self.notebook)
         self.notebook.add(checkin_tab, text="Check In Book")
-        self._build_checkin_tab(checkin_tab)
+        self.build_checkin_tab(checkin_tab)
 
         # Fines tab
         fines_tab = ttk.Frame(self.notebook)
         self.notebook.add(fines_tab, text="Fines")
-        self._build_fines_tab(fines_tab)
+        self.build_fines_tab(fines_tab)
 
     # Search and CHeckout
-    def _build_search_tab(self, parent):
-        """Build the Search & Checkout tab."""
+    def build_search_tab(self, parent):
         search_frame = parent
 
         ttk.Label(search_frame, text="Search Query:").grid(
@@ -310,7 +303,6 @@ class LibraryGUI:
         ).grid(row=2, column=0, columnspan=3, pady=10)
 
     def perform_search(self):
-        """Run a search and populate the results tree."""
         query = self.search_var.get().strip()
         results = self.db.search_books(query)
 
@@ -332,7 +324,6 @@ class LibraryGUI:
             )
 
     def checkout_selected_book(self):
-        """Checkout the currently selected book for the logged-in borrower."""
         if not self.current_user:
             messagebox.showerror(
                 "Not logged in",
@@ -376,12 +367,11 @@ class LibraryGUI:
         else:
             messagebox.showerror(
                 "Error",
-                "Checkout failed. See console for details.",
+                "Checkout failed. Maximum loans reached.",
             )
 
     # Check In the book
-    def _build_checkin_tab(self, parent):
-        """Build the Check In Book tab."""
+    def build_checkin_tab(self, parent):
         frame = parent
 
         ttk.Label(
@@ -447,7 +437,6 @@ class LibraryGUI:
         self.checkin_last_query = ""
 
     def checkin_search_loans(self):
-        """Search for active (OUT) loans and populate the listbox."""
         query = self.checkin_search_var.get().strip()
         self.checkin_last_query = query
 
@@ -478,7 +467,6 @@ class LibraryGUI:
             self.checkin_loans_listbox.insert(tk.END, line)
 
     def checkin_selected_loans(self):
-        """Check in loans by their selection numbers."""
         if not self.checkin_last_query:
             messagebox.showerror(
                 "Error",
@@ -525,8 +513,7 @@ class LibraryGUI:
             )
 
     # Tab to pay fines
-    def _build_fines_tab(self, parent):
-        """Build the Fines tab."""
+    def build_fines_tab(self, parent):
         frame = parent
 
         ttk.Label(frame, text="Borrower Card ID (logged in user):").grid(
@@ -558,7 +545,6 @@ class LibraryGUI:
         ).grid(row=1, column=1, sticky="w", pady=10, padx=5)
 
     def handle_update_fines(self):
-        """Recalculate fines for all borrowers."""
         self.db.update_fines()
         messagebox.showinfo(
             "Fines Updated",
@@ -566,7 +552,6 @@ class LibraryGUI:
         )
 
     def handle_pay_fines(self):
-        """Pay all unpaid fines for the logged-in borrower (returned books only)."""
         if not self.current_user:
             messagebox.showerror(
                 "Not logged in",
@@ -590,7 +575,6 @@ class LibraryGUI:
 
     # Log the use out
     def logout(self):
-        """Log the current user out and return to the start screen."""
         self.current_user = None
         self.login_card_var.set("")
         self.login_password_var.set("")
