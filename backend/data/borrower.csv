@@ -1,4 +1,4 @@
-Card_id,Ssn,Bname,Address,Phone
+Card_id,Ssn,Bname,Address,Phone,Password
 ID000001,850-47-3740,Mark Morgan,"5677 Coolidge Street, Plano, TX",(469) 904-1438
 ID000002,256-95-4382,Eric Warren,"9062 Schurz Drive, Dallas, TX",(214) 701-8127
 ID000003,256-51-5268,Robert Harper,"7786 Sachs Place, Plano, TX",(214) 875-5911
