@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from library_db import LibraryDB
 from init_db import DB_PATH
 
@@ -15,7 +15,9 @@ class LibraryGUI:
 
         # Logged-in borrower
         self.current_user = None
-
+        # Admin (librarian)
+        self.is_admin = False
+        
         self.container = ttk.Frame(self.root)
         self.container.pack(fill="both", expand=True)
 
@@ -35,22 +37,40 @@ class LibraryGUI:
         self.auth_frame.pack_forget()
         self.main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        if self.current_user:
+        # Safely hide admin tab by default
+        if hasattr(self, "admin_tab"):
+            self.notebook.tab(self.admin_tab, state="hidden")
+
+        if self.is_admin:
+            # Librarian view
+            self.root.title("Library - Librarian (admin)")
+            self.user_label.config(text="Logged in as: Librarian (admin)")
+
+            # show admin tab for librarian
+            if hasattr(self, "admin_tab"):
+                self.notebook.tab(self.admin_tab, state="normal")
+
+        elif self.current_user:
+            # Borrower view
             title = f"Library - {self.current_user['name']} ({self.current_user['card_id']})"
             self.root.title(title)
             self.user_label.config(
                 text=f"Logged in as: {self.current_user['name']} ({self.current_user['card_id']})"
             )
-            if hasattr(self, "fines_card_var"):
-                self.fines_card_var.set(self.current_user["card_id"])
-            if hasattr(self, "checkin_card_var"):
-                self.checkin_card_var.set(self.current_user["card_id"])
+            if hasattr(self, "fines_search_var"):
+                self.fines_search_var.set(self.current_user["card_id"])
+                # and immediately load their fines list
+                self.handle_search_fines()
+            # ensure admin tab stays hidden for borrowers
+            if hasattr(self, "admin_tab"):
+                self.notebook.tab(self.admin_tab, state="hidden")
         else:
+            self.root.title("Library Management System")
             self.user_label.config(text="Not logged in")
-            if hasattr(self, "fines_card_var"):
-                self.fines_card_var.set("")
-            if hasattr(self, "checkin_card_var"):
-                self.checkin_card_var.set("")
+            if hasattr(self, "admin_tab"):
+                self.notebook.tab(self.admin_tab, state="hidden")
+
+
 
 
     def build_auth_frame(self):
@@ -96,6 +116,48 @@ class LibraryGUI:
             text="Log In",
             command=self.handle_login,
         ).grid(row=2, column=0, columnspan=2, pady=10)
+
+        # Librarian (admin) login
+        admin_group = ttk.LabelFrame(self.auth_frame, text="Librarian Login")
+        admin_group.grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="nsew",
+            padx=0,
+            pady=(10, 0),
+            ipadx=10,
+            ipady=10,
+        )
+
+        ttk.Label(admin_group, text="Username:").grid(
+            row=0, column=0, sticky="w", pady=5
+        )
+        self.admin_user_var = tk.StringVar(value="admin")
+        ttk.Entry(
+            admin_group,
+            textvariable=self.admin_user_var,
+            width=30,
+            state="readonly",
+        ).grid(row=0, column=1, sticky="w", pady=5)
+
+        ttk.Label(admin_group, text="Password:").grid(
+            row=1, column=0, sticky="w", pady=5
+        )
+        self.admin_password_var = tk.StringVar()
+        ttk.Entry(
+            admin_group,
+            textvariable=self.admin_password_var,
+            width=30,
+            show="*",
+        ).grid(row=1, column=1, sticky="w", pady=5)
+
+        ttk.Button(
+            admin_group,
+            text="Log In as Librarian",
+            command=self.handle_admin_login,
+        ).grid(row=2, column=0, columnspan=2, pady=10)
+
 
         # Create borrower
         create_group = ttk.LabelFrame(self.auth_frame, text="Create New Borrower")
@@ -162,6 +224,7 @@ class LibraryGUI:
             return
 
         # Successful login
+        self.is_admin = False
         self.current_user = {"card_id": row[0], "name": row[1]}
         self.login_password_var.set("")  # clear password field
         self.show_main_screen()
@@ -204,7 +267,31 @@ class LibraryGUI:
         )
 
         # Log in the borrower after creating
+        self.is_admin = False
         self.current_user = {"card_id": card_id, "name": name}
+        self.show_main_screen()
+
+    # Admin Login
+    def handle_admin_login(self):
+        username = self.admin_user_var.get().strip()
+        password = self.admin_password_var.get().strip()
+
+        if username != "admin" or password != "adminpassword":
+            messagebox.showerror(
+                "Login failed",
+                "Invalid librarian username or password.",
+            )
+            return
+
+        # Librarian mode: no specific borrower
+        self.is_admin = True
+        self.current_user = None
+
+        # Clear fields
+        self.login_card_var.set("")
+        self.login_password_var.set("")
+        self.admin_password_var.set("")
+
         self.show_main_screen()
 
     # Main screen
@@ -249,6 +336,17 @@ class LibraryGUI:
         fines_tab = ttk.Frame(self.notebook)
         self.notebook.add(fines_tab, text="Fines")
         self.build_fines_tab(fines_tab)
+        self.fines_tab = fines_tab
+        # Admin overview of all active loans
+        admin_tab = ttk.Frame(self.notebook)
+        self.notebook.add(admin_tab, text="Admin Loans")
+        self.build_admin_tab(admin_tab)
+
+
+        self.admin_tab = admin_tab
+        self.notebook.tab(self.admin_tab, state="hidden")
+
+
 
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
@@ -354,13 +452,6 @@ class LibraryGUI:
 
 
     def checkout_selected_book(self):
-        if not self.current_user:
-            messagebox.showerror(
-                "Not logged in",
-                "You must log in to checkout a book.",
-            )
-            return
-
         selected = self.results_tree.selection()
         if not selected:
             messagebox.showerror(
@@ -378,7 +469,7 @@ class LibraryGUI:
         item_id = selected[0]
         values = self.results_tree.item(item_id, "values")
         isbn = values[0]
-        status = values[3]
+        status = values[3]  # IN / OUT
 
         if status == "OUT":
             messagebox.showerror(
@@ -387,18 +478,47 @@ class LibraryGUI:
             )
             return
 
-        success = self.db.checkout_book(isbn, self.current_user["card_id"])
+        # Decide which Card ID to use
+        if self.is_admin:
+            # Librarian: prompt for borrower card id
+            card_id = simpledialog.askstring(
+                "Borrower Card ID",
+                "Enter the Borrower Card ID to checkout this book to:",
+                parent=self.root,
+            )
+            if card_id is None:
+                # User cancelled
+                return
+            card_id = card_id.strip()
+            if not card_id:
+                messagebox.showerror(
+                    "Error",
+                    "Borrower Card ID cannot be empty.",
+                )
+                return
+        else:
+            # Borrower mode: must be logged in
+            if not self.current_user:
+                messagebox.showerror(
+                    "Not logged in",
+                    "You must log in as a borrower or librarian to checkout a book.",
+                )
+                return
+            card_id = self.current_user["card_id"]
+
+        success = self.db.checkout_book(isbn, card_id)
         if success:
             messagebox.showinfo(
                 "Success",
-                f"Book {isbn} checked out successfully!",
+                f"Book {isbn} checked out successfully to {card_id}!",
             )
             self.perform_search()  # refresh status
         else:
             messagebox.showerror(
                 "Error",
-                "Checkout failed. Maximum loans reached.",
+                "Checkout failed. Maximum loans reached or borrower has unpaid fines.",
             )
+
 
     # Check In the book
     def build_checkin_tab(self, parent):
@@ -573,37 +693,127 @@ class LibraryGUI:
 
 
 
-    # Tab to pay fines
+    # Tab to view & pay fines
     def build_fines_tab(self, parent):
         frame = parent
 
-        ttk.Label(frame, text="Borrower Card ID (logged in user):").grid(
-            row=0,
-            column=0,
-            sticky="w",
-            pady=5,
-            padx=5,
-        )
+        ttk.Label(
+            frame,
+            text="Search fines by Card ID or Borrower Name:",
+        ).grid(row=0, column=0, sticky="w", pady=5, padx=5)
 
-        self.fines_card_var = tk.StringVar()
+        self.fines_search_var = tk.StringVar()
         ttk.Entry(
             frame,
-            textvariable=self.fines_card_var,
+            textvariable=self.fines_search_var,
             width=30,
-            state="readonly",
         ).grid(row=0, column=1, sticky="w", pady=5, padx=5)
+
+        self.include_paid_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame,
+            text="Include paid fines",
+            variable=self.include_paid_var,
+        ).grid(row=0, column=2, sticky="w", pady=5, padx=5)
+
+        ttk.Button(
+            frame,
+            text="Search Fines",
+            command=self.handle_search_fines,
+        ).grid(row=1, column=0, sticky="w", pady=5, padx=5)
 
         ttk.Button(
             frame,
             text="Update All Fines",
             command=self.handle_update_fines,
-        ).grid(row=1, column=0, sticky="w", pady=10, padx=5)
+        ).grid(row=1, column=1, sticky="w", pady=5, padx=5)
 
         ttk.Button(
             frame,
-            text="Pay My Fines",
-            command=self.handle_pay_fines,
-        ).grid(row=1, column=1, sticky="w", pady=10, padx=5)
+            text="Pay Selected Borrower's Fines",
+            command=self.handle_pay_selected_fines,
+        ).grid(row=1, column=2, sticky="w", pady=5, padx=5)
+
+        columns = ("card_id", "name", "total_fine")
+        self.fines_tree = ttk.Treeview(
+            frame,
+            columns=columns,
+            show="headings",
+            height=12,
+        )
+        self.fines_tree.grid(
+            row=2,
+            column=0,
+            columnspan=3,
+            sticky="nsew",
+            pady=5,
+            padx=5,
+        )
+
+        self.fines_tree.heading("card_id", text="Card ID")
+        self.fines_tree.heading("name", text="Borrower Name")
+        self.fines_tree.heading("total_fine", text="Total Fine ($)")
+
+        self.fines_tree.column("card_id", width=120, anchor="w")
+        self.fines_tree.column("name", width=260, anchor="w")
+        self.fines_tree.column("total_fine", width=100, anchor="e")
+
+        frame.rowconfigure(2, weight=1)
+        frame.columnconfigure(1, weight=1)
+
+
+    def handle_search_fines(self):
+        query = self.fines_search_var.get().strip().lower()
+        include_paid = self.include_paid_var.get()
+
+        where_parts = []
+        params = []
+
+        if query:
+            where_parts.append(
+                "(LOWER(B.Card_id) LIKE ? OR LOWER(B.Bname) LIKE ?)"
+            )
+            like = f"%{query}%"
+            params.extend([like, like])
+
+        if not include_paid:
+            # Only show unpaid fines by default
+            where_parts.append("F.Paid = 0")
+
+        where_sql = ""
+        if where_parts:
+            where_sql = "WHERE " + " AND ".join(where_parts)
+
+        sql = f"""
+            SELECT B.Card_id, B.Bname, SUM(F.Fine_amt)
+            FROM FINES F
+            JOIN BOOK_LOANS BL ON F.Loan_id = BL.Loan_id
+            JOIN BORROWER B    ON BL.Card_id = B.Card_id
+            {where_sql}
+            GROUP BY B.Card_id, B.Bname
+            ORDER BY B.Card_id;
+        """
+
+        self.db.cur.execute(sql, tuple(params))
+        rows = self.db.cur.fetchall()
+
+        # Clear tree
+        for item in self.fines_tree.get_children():
+            self.fines_tree.delete(item)
+
+        for card_id, name, total in rows:
+            total_val = float(total) if total is not None else 0.0
+            self.fines_tree.insert(
+                "",
+                "end",
+                values=(card_id, name, f"{total_val:.2f}"),
+            )
+
+        if not rows:
+            messagebox.showinfo(
+                "No fines",
+                "No fines found for that search (with current filters).",
+            )
 
     def handle_update_fines(self):
         self.db.update_fines()
@@ -611,42 +821,146 @@ class LibraryGUI:
             "Fines Updated",
             "Fines have been recalculated.",
         )
+        # Refresh view if there is a search
+        if hasattr(self, "fines_search_var"):
+            self.handle_search_fines()
 
-    def handle_pay_fines(self):
-        if not self.current_user:
+    def handle_pay_selected_fines(self):
+        selected = self.fines_tree.selection()
+        if not selected:
             messagebox.showerror(
-                "Not logged in",
-                "You must be logged in to pay fines.",
+                "No selection",
+                "Please select a borrower row whose fines you want to pay.",
             )
             return
 
-        card_id = self.current_user["card_id"]
-        amount = self.db.pay_fines(card_id)
+        item_id = selected[0]
+        values = self.fines_tree.item(item_id, "values")
+        card_id = values[0]
 
+        amount = self.db.pay_fines(card_id)
         if amount is None or amount == 0.0:
             messagebox.showinfo(
                 "No Fines",
-                "You have no unpaid fines for returned books.",
+                "There are no unpaid fines for returned books for that borrower.",
             )
         else:
             messagebox.showinfo(
                 "Fines Paid",
-                f"Paid ${amount:.2f} in fines.",
+                f"Paid ${amount:.2f} in fines for borrower {card_id}.",
             )
+        self.handle_search_fines()
+
+    def build_admin_tab(self, parent):
+        frame = parent
+
+        ttk.Label(
+            frame,
+            text="All active loans (sorted by Card ID):",
+        ).grid(row=0, column=0, sticky="w", pady=5, padx=5)
+
+        ttk.Button(
+            frame,
+            text="Refresh Loans",
+            command=self.refresh_admin_loans,
+        ).grid(row=0, column=1, sticky="w", pady=5, padx=5)
+
+        columns = ("card_id", "name", "isbn", "title", "date_out", "due_date")
+        self.admin_loans_tree = ttk.Treeview(
+            frame,
+            columns=columns,
+            show="headings",
+            height=14,
+        )
+        self.admin_loans_tree.grid(
+            row=1,
+            column=0,
+            columnspan=2,
+            sticky="nsew",
+            pady=5,
+            padx=5,
+        )
+
+        self.admin_loans_tree.heading("card_id", text="Card ID")
+        self.admin_loans_tree.heading("name", text="Borrower Name")
+        self.admin_loans_tree.heading("isbn", text="ISBN")
+        self.admin_loans_tree.heading("title", text="Title")
+        self.admin_loans_tree.heading("date_out", text="Date Out")
+        self.admin_loans_tree.heading("due_date", text="Due Date")
+
+        self.admin_loans_tree.column("card_id", width=100, anchor="w")
+        self.admin_loans_tree.column("name", width=180, anchor="w")
+        self.admin_loans_tree.column("isbn", width=120, anchor="w")
+        self.admin_loans_tree.column("title", width=260, anchor="w")
+        self.admin_loans_tree.column("date_out", width=90, anchor="center")
+        self.admin_loans_tree.column("due_date", width=90, anchor="center")
+
+        frame.rowconfigure(1, weight=1)
+        frame.columnconfigure(0, weight=1)
+
+    def refresh_admin_loans(self):
+        if not self.is_admin:
+            messagebox.showerror(
+                "Admin only",
+                "You must be logged in as the librarian (admin) to view this tab.",
+            )
+            return
+
+        self.db.cur.execute(
+            """
+            SELECT BL.Card_id,
+                   BR.Bname,
+                   BL.Isbn,
+                   B.Title,
+                   BL.Date_out,
+                   BL.Due_date
+            FROM BOOK_LOANS BL
+            JOIN BORROWER BR ON BL.Card_id = BR.Card_id
+            JOIN BOOK     B  ON BL.Isbn    = B.Isbn
+            WHERE BL.Date_in IS NULL
+            ORDER BY BL.Card_id, BL.Isbn;
+            """
+        )
+        rows = self.db.cur.fetchall()
+
+        for item in self.admin_loans_tree.get_children():
+            self.admin_loans_tree.delete(item)
+
+        for card_id, name, isbn, title, date_out, due_date in rows:
+            self.admin_loans_tree.insert(
+                "",
+                "end",
+                values=(card_id, name, isbn, title, date_out, due_date),
+            )
+
     def on_tab_changed(self, event):
         if not self.current_user:
             return
         self.checkin_search_loans()
         self.perform_search()
+        selected_id = event.widget.select()
+        tab_widget = event.widget.nametowidget(selected_id)
+        if not self.is_admin and hasattr(self, "fines_tab") and tab_widget is self.fines_tab:
+            if self.current_user and hasattr(self, "fines_search_var"):
+                self.fines_search_var.set(self.current_user["card_id"])
+                self.handle_search_fines()
+            return
         
 
-    # Log the use out
+    # Log the user out
     def logout(self):
         self.current_user = None
+        self.is_admin = False
+
         self.login_card_var.set("")
         self.login_password_var.set("")
-        if hasattr(self, "fines_card_var"):
-            self.fines_card_var.set("")
+        if hasattr(self, "admin_password_var"):
+            self.admin_password_var.set("")
+        if hasattr(self, "fines_search_var"):
+            self.fines_search_var.set("")
+        if hasattr(self, "admin_tab"):
+            self.notebook.tab(self.admin_tab, state="hidden")
+
         self.show_auth_screen()
 
 
