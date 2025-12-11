@@ -9,4 +9,10 @@ The workspace contains two important folders:
 - `src`: the folder for Main.java and input files
 - `output`: the folder for output files
 
+HOW TO RUN:
+run init_db.py to initialize the database, this will create the library.db file.
+run gui.py, this will show the UI interface where you can check out books and check in books
+
+
+
 Shoot me a message on discord if you have trouble with anything.
