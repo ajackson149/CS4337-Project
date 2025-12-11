@@ -17,4 +17,11 @@ run gui.py, this will show the UI interface where you can check out books and ch
 As a librarian the librarian password is adminpassword
 
 
+Extra credit:
+Needs a login in order to access library functions.
+Functionality for multiple users to log in, even having a librarian with admin permissions.
+Homepage for borrowers that lets them log in, and query the status of the checkouts
+Displaying multiple results, multiple books can be checked out via control + click or shift + click
+
+
 Shoot me a message on discord if you have trouble with anything.
