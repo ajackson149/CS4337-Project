@@ -809,12 +809,6 @@ class LibraryGUI:
                 values=(card_id, name, f"{total_val:.2f}"),
             )
 
-        if not rows:
-            messagebox.showinfo(
-                "No fines",
-                "No fines found for that search (with current filters).",
-            )
-
     def handle_update_fines(self):
         self.db.update_fines()
         messagebox.showinfo(
